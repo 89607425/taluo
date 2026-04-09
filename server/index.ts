@@ -54,7 +54,7 @@ type NoteRow = RowDataPacket & {
   created_at: Date | string;
 };
 
-const app = express();
+export const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -476,15 +476,21 @@ app.get('/api/sessions/:sessionId/reveal-stream', async (req, res) => {
   }
 });
 
-async function bootstrap() {
+export async function bootstrap() {
   await connectRedis();
   await ensureSchema();
-  app.listen(env.port, () => {
-    console.log(`API listening on :${env.port}`);
-  });
 }
 
-bootstrap().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Run directly (local dev: tsx server/index.ts)
+if (process.argv[1] && process.argv[1].endsWith('index.ts')) {
+  bootstrap()
+    .then(() => {
+      app.listen(env.port, () => {
+        console.log(`API listening on :${env.port}`);
+      });
+    })
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+}
