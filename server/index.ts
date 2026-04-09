@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'crypto';
+import path from 'path';
+import { existsSync } from 'fs';
+import { fileURLToPath } from 'url';
 import { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { query } from './db';
 import { connectRedis, redis } from './redis';
@@ -63,6 +66,11 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distDir = path.resolve(__dirname, '../dist');
+const indexHtmlPath = path.join(distDir, 'index.html');
 
 function parseJsonValue<T>(value: unknown, fallback: T): T {
   if (value == null) return fallback;
@@ -475,6 +483,13 @@ app.get('/api/sessions/:sessionId/reveal-stream', async (req, res) => {
     return;
   }
 });
+
+if (existsSync(indexHtmlPath)) {
+  app.use(express.static(distDir));
+  app.get(/^\/(?!api\/).*/, (_req, res) => {
+    res.sendFile(indexHtmlPath);
+  });
+}
 
 async function bootstrap() {
   await connectRedis();
