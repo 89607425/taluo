@@ -489,6 +489,10 @@ if (existsSync(indexHtmlPath)) {
   app.get(/^\/(?!api\/).*/, (_req, res) => {
     res.sendFile(indexHtmlPath);
   });
+} else {
+  app.get('/', (_req, res) => {
+    res.status(200).send('Tarot API is running. Frontend bundle not found (dist/index.html).');
+  });
 }
 
 async function bootstrap() {
