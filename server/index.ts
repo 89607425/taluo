@@ -476,15 +476,22 @@ app.get('/api/sessions/:sessionId/reveal-stream', async (req, res) => {
   }
 });
 
-async function bootstrap() {
+export async function bootstrap() {
   await connectRedis();
   await ensureSchema();
-  app.listen(env.port, () => {
-    console.log(`API listening on :${env.port}`);
-  });
 }
 
-bootstrap().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+export { app };
+
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+  bootstrap()
+    .then(() => {
+      app.listen(env.port, () => {
+        console.log(`API listening on :${env.port}`);
+      });
+    })
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+}
