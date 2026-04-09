@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 1000">
+  <defs>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#17120a"/>
+      <stop offset="50%" stop-color="#30260f"/>
+      <stop offset="100%" stop-color="#17120a"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="1000" fill="url(#g4)"/>
+  <rect x="24" y="24" width="552" height="952" rx="28" fill="none" stroke="#e9c349" stroke-opacity="0.45" stroke-width="6"/>
+  <g stroke="#e9c349" stroke-opacity="0.5" stroke-width="4" fill="none">
+    <line x1="140" y1="220" x2="460" y2="220"/>
+    <line x1="140" y1="780" x2="460" y2="780"/>
+    <line x1="120" y1="320" x2="480" y2="680"/>
+    <line x1="480" y1="320" x2="120" y2="680"/>
+  </g>
+  <circle cx="300" cy="500" r="140" fill="#e9c349" fill-opacity="0.08" stroke="#e9c349" stroke-opacity="0.35" stroke-width="4"/>
+  <text x="300" y="915" fill="#e9c349" fill-opacity="0.75" text-anchor="middle" font-size="36" font-family="serif">ARCANA IV</text>
+</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 1000">
+  <defs>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#17120a"/>
+      <stop offset="50%" stop-color="#30260f"/>
+      <stop offset="100%" stop-color="#17120a"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="1000" fill="url(#g4)"/>
+  <rect x="24" y="24" width="552" height="952" rx="28" fill="none" stroke="#e9c349" stroke-opacity="0.45" stroke-width="6"/>
+  <g stroke="#e9c349" stroke-opacity="0.5" stroke-width="4" fill="none">
+    <line x1="140" y1="220" x2="460" y2="220"/>
+    <line x1="140" y1="780" x2="460" y2="780"/>
+    <line x1="120" y1="320" x2="480" y2="680"/>
+    <line x1="480" y1="320" x2="120" y2="680"/>
+  </g>
+  <circle cx="300" cy="500" r="140" fill="#e9c349" fill-opacity="0.08" stroke="#e9c349" stroke-opacity="0.35" stroke-width="4"/>
+  <text x="300" y="915" fill="#e9c349" fill-opacity="0.75" text-anchor="middle" font-size="36" font-family="serif">ARCANA IV</text>
+</svg>

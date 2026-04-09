@@ -1,31 +1,24 @@
 import React from 'react';
-import { Sparkles, History, BookOpen, User, Settings } from 'lucide-react';
+import { Sparkles, History, Settings } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface LayoutProps {
   children: React.ReactNode;
   activeTab: string;
   onTabChange: (tab: string) => void;
-  onOpenSettings: () => void;
 }
 
-export default function Layout({ children, activeTab, onTabChange, onOpenSettings }: LayoutProps) {
+export default function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   return (
     <div className="min-h-screen bg-background text-on-background flex flex-col">
       {/* Header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-white/5 px-6 py-4 flex justify-between items-center">
+      <header className="fixed top-0 left-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-white/5 px-6 py-4 flex justify-center items-center">
         <div className="flex items-center gap-3">
           <Sparkles className="w-6 h-6 text-primary" />
           <h1 className="font-headline text-xl font-bold text-primary tracking-[0.2em] uppercase">
             Spring Breeze
           </h1>
         </div>
-        <button 
-          onClick={onOpenSettings}
-          className="p-2 hover:bg-surface-high rounded-full transition-colors text-on-background/60 hover:text-primary"
-        >
-          <Settings className="w-6 h-6" />
-        </button>
       </header>
 
       {/* Main Content */}
@@ -49,16 +42,10 @@ export default function Layout({ children, activeTab, onTabChange, onOpenSetting
             label="历史"
           />
           <NavButton 
-            active={activeTab === 'journal'} 
-            onClick={() => onTabChange('journal')}
-            icon={<BookOpen className="w-6 h-6" />}
-            label="指南"
-          />
-          <NavButton 
-            active={activeTab === 'profile'} 
-            onClick={() => onTabChange('profile')}
-            icon={<User className="w-6 h-6" />}
-            label="灵魂"
+            active={activeTab === 'settings'} 
+            onClick={() => onTabChange('settings')}
+            icon={<Settings className="w-6 h-6" />}
+            label="设置"
           />
         </div>
       </nav>

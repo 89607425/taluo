@@ -23,13 +23,34 @@
   }
 }
 
+:root.theme-fresh {
+  --color-primary: #58b87b;
+  --color-on-primary: #ffffff;
+  --color-background: #f4fbf6;
+  --color-on-background: #1a3a2a;
+  --color-surface: #ffffff;
+  --color-on-surface: #1a3a2a;
+  --color-surface-high: #e9f7ee;
+  --color-outline: #b4d9c2;
+  --color-tertiary: #82cf9d;
+}
+
 .sacred-glow {
   box-shadow: 0 0 20px rgba(233, 195, 73, 0.15);
+}
+
+:root.theme-fresh .sacred-glow {
+  box-shadow: 0 0 20px rgba(88, 184, 123, 0.2);
 }
 
 .tarot-card-back {
   background: linear-gradient(135deg, #231a00 0%, #131313 100%);
   border: 1px solid rgba(233, 195, 73, 0.1);
+}
+
+:root.theme-fresh .tarot-card-back {
+  background: linear-gradient(135deg, #f7fffa 0%, #def2e6 100%);
+  border: 1px solid rgba(88, 184, 123, 0.25);
 }
 
 .hide-scrollbar::-webkit-scrollbar {

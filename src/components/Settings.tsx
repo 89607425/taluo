@@ -1,149 +1,119 @@
-import React from 'react';
 import { motion } from 'motion/react';
-import { Settings as SettingsIcon, Moon, Sun, Volume2, Trash2, ChevronRight, Share2, Info } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Sparkles, SlidersHorizontal, Wand2 } from 'lucide-react';
+import { SpreadType, UserSettings } from '../types';
 
-export default function Settings({ onClose }: { onClose: () => void }) {
+export default function Settings({
+  value,
+  onChange,
+}: {
+  value: UserSettings;
+  onChange: (next: UserSettings) => Promise<void>;
+}) {
   return (
-    <motion.div 
-      initial={{ opacity: 0, x: '100%' }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: '100%' }}
-      className="fixed inset-0 z-[60] bg-background flex flex-col"
+    <motion.div
+      key="settings-page"
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -24 }}
+      className="max-w-4xl mx-auto px-6 space-y-8"
     >
-      <header className="px-6 py-4 border-b border-white/5 flex items-center">
-        <button onClick={onClose} className="p-2 -ml-2 text-primary">
-          <ChevronRight className="w-6 h-6 rotate-180" />
-        </button>
-        <h1 className="flex-1 text-center font-headline text-xl text-primary tracking-tight">Settings</h1>
-        <div className="w-8" />
+      <header className="relative overflow-hidden rounded-2xl border border-primary/20 bg-surface p-8 sacred-glow">
+        <div className="absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/10 blur-2xl" />
+        <div className="relative flex items-start justify-between">
+          <div>
+            <p className="font-label text-xs tracking-[0.25em] uppercase text-primary/80">Ritual Control</p>
+            <h1 className="font-headline text-4xl mt-2">占卜设置</h1>
+            <p className="text-on-background/60 mt-3">统一你的占卜节奏、牌阵偏好与解读风格。</p>
+          </div>
+          <Sparkles className="text-primary w-7 h-7" />
+        </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-6 py-8 space-y-12 hide-scrollbar">
-        <section className="space-y-6">
-          <header>
-            <p className="font-label text-[11px] uppercase tracking-[0.2em] text-primary mb-2">Divination Settings</p>
-            <div className="h-px w-8 bg-primary/30" />
-          </header>
-          <div className="bg-surface rounded-xl overflow-hidden">
-            <SettingToggle title="逆位开关" description="开启后，抽牌可能出现正位或逆位" defaultChecked />
-            <SettingSelect title="解读风格" value="详细解读" />
-            <SettingSelect title="默认牌阵" value="圣三角" />
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-surface border border-white/5 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-2 text-primary">
+            <SlidersHorizontal className="w-5 h-5" />
+            <h2 className="font-headline text-2xl">核心配置</h2>
           </div>
-        </section>
 
-        <section className="space-y-6">
-          <header>
-            <p className="font-label text-[11px] uppercase tracking-[0.2em] text-primary mb-2">Ritual Atmosphere</p>
-            <div className="h-px w-8 bg-primary/30" />
-          </header>
-          <div className="space-y-4">
-            <label className="font-headline text-lg px-1">占卜主题</label>
-            <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
-              <ThemeCard 
-                title="默认主题" 
-                active 
-                image="https://lh3.googleusercontent.com/aida-public/AB6AXuD6yqQTEFYUrw0h13pXd4YjVuRRe9PWODUYntYLuCcy_O8-heHhwRtQGuyEay1DXfX6Ww3I_KGmEPZRBy-C9yqxWPJrM9HMtKSCIKfECzjcG2Mg9A-VN5VEqRxWlCqxhAq6_d1Doc1oYEhXVx6dVa1RIYRbC-u5WSPJqt_RoD7R2cLxwP6ejM_Y48fsMRjGgoqe4R_2_2ep3-71Dqlno2OdA4FcvE9IX9wNUqQbu6jodwIVs_RVvA4GBqjSSFZ3QtRyFQubatr192g" 
-              />
-              <ThemeCard 
-                title="星辰主题" 
-                image="https://lh3.googleusercontent.com/aida-public/AB6AXuAKi-HZ0GbGd7lrSepqCYX6BNDE0ZiiStiOIeIhvqx6vbm-9DY46O7yNpbznS4iKCpGiFdVicPeX1HPftULOSWd9YVd_qh4HvXXlnvmS2VSWbGHSjaGlN_gYvvezm90mbOiRnpjm2Ny_Ic1wEolgw18uHMwFc8kzOz59-WhugBZVJD0C3kSNcUaSzCaziRki80aZpjb3jlI5LjZnXdmH9n9jWhXuK1H5BjvHrEZuvOX5RxJmPDvi__ip8V0n0WteTfO2H8-JWniz8U" 
-              />
+          <label className="flex items-center justify-between rounded-xl bg-surface-high/70 px-4 py-4 border border-white/5">
+            <div>
+              <p className="font-headline text-lg">逆位开关</p>
+              <p className="text-xs text-on-background/55 mt-1">关闭后，所有牌只显示正位</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={value.reverseEnabled}
+              onChange={(e) => {
+                void onChange({ ...value, reverseEnabled: e.target.checked });
+              }}
+              className="h-5 w-5 accent-[#e9c349]"
+            />
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-sm text-on-background/60">默认牌阵</span>
+            <select
+              className="w-full bg-surface-high rounded-xl p-3 border border-white/10 focus:border-primary outline-none"
+              value={value.defaultSpread}
+              onChange={(e) => {
+                void onChange({ ...value, defaultSpread: e.target.value as SpreadType });
+              }}
+            >
+              <option value="single">单牌指引</option>
+              <option value="trinity">圣三角</option>
+              <option value="celtic">凯尔特十字</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="bg-surface border border-white/5 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-2 text-primary">
+            <Wand2 className="w-5 h-5" />
+            <h2 className="font-headline text-2xl">解读风格</h2>
+          </div>
+
+          <label className="block space-y-2">
+            <span className="text-sm text-on-background/60">输出模式</span>
+            <select
+              className="w-full bg-surface-high rounded-xl p-3 border border-white/10 focus:border-primary outline-none"
+              value={value.interpretationStyle}
+              onChange={(e) => {
+                void onChange({ ...value, interpretationStyle: e.target.value as 'brief' | 'detailed' });
+              }}
+            >
+              <option value="detailed">详细解读</option>
+              <option value="brief">简洁解读</option>
+            </select>
+          </label>
+
+          <div className="space-y-2">
+            <span className="text-sm text-on-background/60">界面风格</span>
+            <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface-high p-1 border border-white/10">
+              <button
+                className={`rounded-lg py-2 text-sm transition-colors ${value.themeStyle === 'dark' ? 'bg-primary text-on-primary' : 'text-on-background/70 hover:text-primary'}`}
+                onClick={() => {
+                  void onChange({ ...value, themeStyle: 'dark' });
+                }}
+              >
+                黑暗风
+              </button>
+              <button
+                className={`rounded-lg py-2 text-sm transition-colors ${value.themeStyle === 'fresh' ? 'bg-primary text-on-primary' : 'text-on-background/70 hover:text-primary'}`}
+                onClick={() => {
+                  void onChange({ ...value, themeStyle: 'fresh' });
+                }}
+              >
+                清新风
+              </button>
             </div>
           </div>
-          <div className="bg-surface rounded-xl p-5 space-y-6">
-            <SettingToggle title="背景音乐" />
-            <div className="space-y-3 opacity-50">
-              <div className="flex justify-between font-label text-[10px] text-on-background/40 uppercase tracking-widest">
-                <span>Volume</span>
-                <span>0%</span>
-              </div>
-              <div className="h-1 w-full bg-surface-high rounded-full overflow-hidden">
-                <div className="h-full w-0 bg-primary" />
-              </div>
-            </div>
-          </div>
-        </section>
 
-        <section className="space-y-6">
-          <header>
-            <p className="font-label text-[11px] uppercase tracking-[0.2em] text-primary mb-2">Data Management</p>
-            <div className="h-px w-8 bg-primary/30" />
-          </header>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <DataCard title="历史记录" value="已存储 12 条记录" action="清空记录" />
-            <DataCard title="缓存管理" value="12.5 MB" action="清理缓存" />
+          <div className="rounded-xl bg-surface-high/70 border border-white/5 p-4 text-sm text-on-background/65 leading-relaxed">
+            当前偏好会自动持久化，下次进入直接生效。
           </div>
-        </section>
-
-        <footer className="py-12 flex flex-col items-center space-y-2 opacity-20">
-          <p className="font-label text-[11px] uppercase tracking-widest">Version 1.0.0</p>
-          <p className="font-label text-[11px] uppercase tracking-widest">The Digital Alchemist • 2024</p>
-        </footer>
-      </main>
+        </div>
+      </section>
     </motion.div>
-  );
-}
-
-function SettingToggle({ title, description, defaultChecked }: { title: string; description?: string; defaultChecked?: boolean }) {
-  return (
-    <div className="flex items-center justify-between p-5 hover:bg-surface-high transition-colors">
-      <div className="space-y-1">
-        <span className="font-headline text-lg">{title}</span>
-        {description && <p className="text-sm text-on-background/40">{description}</p>}
-      </div>
-      <div className={cn(
-        "w-11 h-6 rounded-full relative transition-colors",
-        defaultChecked ? "bg-primary" : "bg-surface-high"
-      )}>
-        <div className={cn(
-          "absolute top-1 w-4 h-4 rounded-full bg-on-primary transition-all",
-          defaultChecked ? "left-6" : "left-1"
-        )} />
-      </div>
-    </div>
-  );
-}
-
-function SettingSelect({ title, value }: { title: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between p-5 hover:bg-surface-high transition-colors cursor-pointer">
-      <span className="font-headline text-lg">{title}</span>
-      <div className="flex items-center gap-2 text-primary">
-        <span className="text-sm font-label tracking-wide">{value}</span>
-        <ChevronRight className="w-4 h-4" />
-      </div>
-    </div>
-  );
-}
-
-function ThemeCard({ title, image, active }: { title: string; image: string; active?: boolean }) {
-  return (
-    <div className={cn(
-      "flex-shrink-0 w-40 h-48 rounded-xl p-4 flex flex-col justify-between border transition-all cursor-pointer",
-      active ? "bg-surface-high border-primary/20 sacred-glow" : "bg-surface border-white/5"
-    )}>
-      <div className="w-full h-24 rounded-lg overflow-hidden relative">
-        <img src={image} alt={title} className="w-full h-full object-cover opacity-60" referrerPolicy="no-referrer" />
-      </div>
-      <div className="flex items-center justify-between">
-        <span className={cn("text-sm font-headline", active ? "text-primary" : "text-on-background/60")}>{title}</span>
-        {active && <Sun className="w-4 h-4 text-primary" />}
-      </div>
-    </div>
-  );
-}
-
-function DataCard({ title, value, action }: { title: string; value: string; action: string }) {
-  return (
-    <div className="bg-surface rounded-xl p-5 flex flex-col justify-between space-y-4">
-      <div>
-        <span className="font-headline text-lg block mb-1">{title}</span>
-        <p className="text-sm text-primary font-label">{value}</p>
-      </div>
-      <button className="w-full py-2.5 rounded-full border border-white/10 text-xs font-label uppercase tracking-widest text-on-background/40 hover:border-primary/50 hover:text-primary transition-all">
-        {action}
-      </button>
-    </div>
   );
 }
