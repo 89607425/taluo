@@ -1,68 +1,55 @@
 import 'dotenv/config';
-import express from 'express';
-import { randomUUID } from 'crypto';
-import path from 'path';
+import express, { NextFunction, Request, Response } from 'express';
 import { existsSync } from 'fs';
+import path from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID, scryptSync, timingSafeEqual } from 'crypto';
+import jwt from 'jsonwebtoken';
 import { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
-import { query } from './db';
-import { connectRedis, redis } from './redis';
+import { connectRedis } from './redis';
 import { ensureSchema } from './schema';
 import { env } from './env';
-import { SpreadType, UserSettings } from '../src/types';
-import { TAROT_CARD_IDS, TAROT_CARD_MAP } from '../src/data/tarotCatalog';
+import { query } from './db';
+import { createProvider } from './providers/DivinationProviderFactory';
+import { SessionManager } from './session/SessionManager';
 import { spreadSlotNames } from '../src/config/spreads';
+import { TAROT_CARD_IDS } from '../src/data/tarotCatalog';
 import { createSeededRandom, fisherYates } from './random';
-import { generateInterpretationStream } from './ai';
+import { AIService } from './services/AIService';
 
-type SessionDraft = {
-  sessionId: string;
-  userId: string;
-  state: 'STATE_INTENT' | 'STATE_SHUFFLE' | 'STATE_SELECT' | 'STATE_REVEAL';
+type HistoryRow = RowDataPacket & {
+  id: string;
+  user_id: string;
+  type: 'liuyao' | 'tarot';
   question: string;
-  spreadType: SpreadType;
-  deck: string[];
-  selected: Array<{ cardId: string; position: string; isReversed: boolean }>;
-  reversals: Record<string, boolean>;
-  createdAt: string;
-  updatedAt: string;
-  lastSelectionAt?: number;
+  input_params: unknown;
+  raw_data: unknown;
+  interpretation: string | null;
+  is_starred: number | boolean;
+  created_at: string | Date;
 };
 
-type SettingsRow = RowDataPacket & {
+type UserRow = RowDataPacket & {
+  id: string;
+  email: string;
+  password_hash: string;
+  nickname: string;
+};
+
+type TarotSettingsRow = RowDataPacket & {
   user_id: string;
   reverse_enabled: number | boolean;
-  default_spread: SpreadType;
-  interpretation_style: 'brief' | 'detailed';
-  theme_style: 'dark' | 'fresh' | null;
-};
-
-type RecordRow = RowDataPacket & {
-  id: string;
-  user_id: string;
-  question: string;
-  spread_type: SpreadType;
-  cards_json: unknown;
-  interpretation_text: string;
-  created_at: Date | string;
-};
-
-type NoteRow = RowDataPacket & {
-  id: string;
-  user_id: string;
-  reading_id: string | null;
-  title: string;
-  content: string;
-  tags_json: unknown;
-  created_at: Date | string;
 };
 
 const app = express();
+const sessions = new SessionManager(24 * 60 * 60);
+const aiService = new AIService();
+
 app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,PATCH,OPTIONS');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
@@ -72,7 +59,9 @@ const __dirname = path.dirname(__filename);
 const distDir = path.resolve(__dirname, '../dist');
 const indexHtmlPath = path.join(distDir, 'index.html');
 
-function parseJsonValue<T>(value: unknown, fallback: T): T {
+type AuthRequest = Request & { user?: { id: string; email: string } };
+
+function parseJson<T>(value: unknown, fallback: T): T {
   if (value == null) return fallback;
   if (typeof value === 'string') {
     try {
@@ -84,403 +73,627 @@ function parseJsonValue<T>(value: unknown, fallback: T): T {
   return value as T;
 }
 
-function toBoolean(v: number | boolean): boolean {
-  return typeof v === 'boolean' ? v : v === 1;
+function sendSSEChunk(res: Response, chunk: string) {
+  res.write(`event: chunk\ndata: ${chunk.replace(/\n/g, '\\n')}\n\n`);
 }
 
-function sessionKey(userId: string, sessionId: string): string {
-  return `session:${userId}:${sessionId}`;
+function hashPassword(password: string): string {
+  const salt = randomUUID();
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
 }
 
-function userDraftsKey(userId: string): string {
-  return `drafts:${userId}`;
+function verifyPassword(password: string, stored: string): boolean {
+  const [salt, hashHex] = stored.split(':');
+  if (!salt || !hashHex) return false;
+  const calc = scryptSync(password, salt, 64);
+  const given = Buffer.from(hashHex, 'hex');
+  if (given.length !== calc.length) return false;
+  return timingSafeEqual(calc, given);
 }
 
-async function getOrCreateSettings(userId: string): Promise<UserSettings> {
-  const rows = await query<SettingsRow[]>(
-    `SELECT user_id, reverse_enabled, default_spread, interpretation_style, theme_style
-     FROM user_settings
-     WHERE user_id = ?`,
-    [userId],
-  );
+function createToken(payload: { id: string; email: string }): string {
+  return jwt.sign({ sub: payload.id, email: payload.email }, env.jwtSecret, { expiresIn: '7d' });
+}
 
-  if (rows[0]) {
-    return {
-      userId: rows[0].user_id,
-      reverseEnabled: toBoolean(rows[0].reverse_enabled),
-      defaultSpread: rows[0].default_spread,
-      interpretationStyle: rows[0].interpretation_style,
-      themeStyle: rows[0].theme_style || 'dark',
-    };
+function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+  const auth = String(req.headers.authorization || '');
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token) return res.status(401).send('Unauthorized');
+
+  try {
+    const decoded = jwt.verify(token, env.jwtSecret) as { sub: string; email: string };
+    req.user = { id: decoded.sub, email: decoded.email };
+    return next();
+  } catch {
+    return res.status(401).send('Unauthorized');
   }
+}
 
-  await query<ResultSetHeader>(
-    `INSERT INTO user_settings(user_id, reverse_enabled, default_spread, interpretation_style, theme_style)
-     VALUES (?, TRUE, 'trinity', 'detailed', 'dark')`,
+async function getTarotSettings(userId: string): Promise<{ reverseEnabled: boolean }> {
+  const rows = await query<TarotSettingsRow[]>(
+    `SELECT user_id, reverse_enabled FROM user_settings WHERE user_id = ? LIMIT 1`,
     [userId],
   );
+
+  if (!rows[0]) {
+    await query<ResultSetHeader>(
+      `INSERT INTO user_settings(user_id, reverse_enabled) VALUES (?, 1)
+       ON DUPLICATE KEY UPDATE reverse_enabled = reverse_enabled`,
+      [userId],
+    );
+    return { reverseEnabled: true };
+  }
 
   return {
-    userId,
-    reverseEnabled: true,
-    defaultSpread: 'trinity',
-    interpretationStyle: 'detailed',
-    themeStyle: 'dark',
+    reverseEnabled: typeof rows[0].reverse_enabled === 'boolean' ? rows[0].reverse_enabled : rows[0].reverse_enabled === 1,
   };
-}
-
-async function saveSession(session: SessionDraft, ttlSec: number): Promise<void> {
-  await redis.set(sessionKey(session.userId, session.sessionId), JSON.stringify(session), { EX: ttlSec });
-}
-
-async function loadSession(userId: string, sessionId: string): Promise<SessionDraft> {
-  const raw = await redis.get(sessionKey(userId, sessionId));
-  if (!raw) throw new Error('会话不存在或已过期');
-  const parsed = JSON.parse(String(raw)) as SessionDraft;
-  parsed.updatedAt = new Date().toISOString();
-  await saveSession(parsed, 2 * 60 * 60);
-  return parsed;
-}
-
-async function enforceDraftLimit(userId: string): Promise<void> {
-  const key = userDraftsKey(userId);
-  while (Number(await redis.zCard(key)) > 5) {
-    const oldest = await redis.zRange(key, 0, 0);
-    if (!oldest[0]) break;
-    const removeSessionId = String(oldest[0]);
-    await redis.zRem(key, removeSessionId);
-    await redis.del(sessionKey(userId, removeSessionId));
-  }
 }
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/settings', async (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   try {
-    const userId = String(req.query.userId || '');
-    if (!userId) return res.status(400).send('Missing userId');
-    const settings = await getOrCreateSettings(userId);
-    return res.json(settings);
-  } catch (e) {
-    return res.status(500).send((e as Error).message);
-  }
-});
+    const body = req.body as { email: string; password: string; nickname?: string };
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+    const nickname = String(body.nickname || '').trim() || `用户${Math.floor(Math.random() * 9000 + 1000)}`;
 
-app.post('/api/settings', async (req, res) => {
-  try {
-    const body = req.body as UserSettings;
-    if (!body?.userId) return res.status(400).send('Missing userId');
+    if (!email || !email.includes('@')) return res.status(400).send('邮箱格式不正确');
+    if (password.length < 6) return res.status(400).send('密码至少 6 位');
 
+    const existed = await query<UserRow[]>(`SELECT id, email, password_hash, nickname FROM users WHERE email = ? LIMIT 1`, [email]);
+    if (existed[0]) return res.status(409).send('邮箱已注册');
+
+    const userId = randomUUID();
     await query<ResultSetHeader>(
-      `INSERT INTO user_settings(user_id, reverse_enabled, default_spread, interpretation_style, theme_style)
-       VALUES (?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         reverse_enabled = VALUES(reverse_enabled),
-         default_spread = VALUES(default_spread),
-         interpretation_style = VALUES(interpretation_style),
-         theme_style = VALUES(theme_style),
-         updated_at = CURRENT_TIMESTAMP`,
-      [body.userId, body.reverseEnabled, body.defaultSpread, body.interpretationStyle, body.themeStyle || 'dark'],
+      `INSERT INTO users(id, email, password_hash, nickname) VALUES (?, ?, ?, ?)`,
+      [userId, email, hashPassword(password), nickname],
     );
 
-    const settings = await getOrCreateSettings(body.userId);
-    return res.json(settings);
-  } catch (e) {
-    return res.status(500).send((e as Error).message);
-  }
-});
-
-app.get('/api/history', async (req, res) => {
-  try {
-    const userId = String(req.query.userId || '');
-    if (!userId) return res.status(400).send('Missing userId');
-    const rows = await query<RecordRow[]>(
-      `SELECT id, user_id, question, spread_type, cards_json, interpretation_text, created_at
-       FROM tarot_records
-       WHERE user_id = ?
-       ORDER BY created_at DESC
-       LIMIT 30`,
+    await query<ResultSetHeader>(
+      `INSERT INTO user_settings(user_id, reverse_enabled) VALUES (?, 1)
+       ON DUPLICATE KEY UPDATE reverse_enabled = reverse_enabled`,
       [userId],
     );
 
-    return res.json(
-      rows.map((r) => ({
-        id: r.id,
-        userId: r.user_id,
-        question: r.question,
-        spreadType: r.spread_type,
-        cards: parseJsonValue(r.cards_json, []),
-        interpretationText: r.interpretation_text,
-        createdAt: new Date(r.created_at).toISOString(),
-      })),
-    );
-  } catch (e) {
-    return res.status(500).send((e as Error).message);
-  }
-});
-
-app.delete('/api/history', async (req, res) => {
-  try {
-    const userId = String(req.query.userId || '');
-    if (!userId) return res.status(400).send('Missing userId');
-    await query<ResultSetHeader>(`DELETE FROM tarot_records WHERE user_id = ?`, [userId]);
-    await query<ResultSetHeader>(`DELETE FROM tarot_notes WHERE user_id = ?`, [userId]);
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(500).send((e as Error).message);
-  }
-});
-
-app.get('/api/notes', async (req, res) => {
-  try {
-    const userId = String(req.query.userId || '');
-    if (!userId) return res.status(400).send('Missing userId');
-    const rows = await query<NoteRow[]>(
-      `SELECT id, user_id, reading_id, title, content, tags_json, created_at
-       FROM tarot_notes
-       WHERE user_id = ?
-       ORDER BY created_at DESC`,
-      [userId],
-    );
-
-    return res.json(
-      rows.map((r) => ({
-        id: r.id,
-        userId: r.user_id,
-        readingId: r.reading_id || undefined,
-        title: r.title,
-        content: r.content,
-        tags: parseJsonValue<string[]>(r.tags_json, []),
-        date: new Date(r.created_at).toISOString(),
-      })),
-    );
-  } catch (e) {
-    return res.status(500).send((e as Error).message);
-  }
-});
-
-app.post('/api/notes', async (req, res) => {
-  try {
-    const body = req.body as { userId: string; readingId?: string; title: string; content: string; tags?: string[] };
-    if (!body?.userId) return res.status(400).send('Missing userId');
-    if (!body.title?.trim() || !body.content?.trim()) {
-      return res.status(400).send('标题和内容不能为空');
-    }
-    const noteId = randomUUID();
-    await query<ResultSetHeader>(
-      `INSERT INTO tarot_notes(id, user_id, reading_id, title, content, tags_json)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [noteId, body.userId, body.readingId || null, body.title.trim(), body.content.trim(), JSON.stringify(body.tags || [])],
-    );
+    const token = createToken({ id: userId, email });
     return res.json({
-      id: noteId,
-      userId: body.userId,
-      readingId: body.readingId,
-      title: body.title.trim(),
-      content: body.content.trim(),
-      tags: body.tags || [],
-      date: new Date().toISOString(),
+      token,
+      user: { id: userId, email, nickname },
     });
   } catch (e) {
     return res.status(500).send((e as Error).message);
   }
 });
 
-app.post('/api/sessions/start', async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
-    const body = req.body as { userId: string; question: string; spreadType: SpreadType };
-    if (!body?.userId) return res.status(400).send('Missing userId');
-    if (!body?.spreadType) return res.status(400).send('Missing spreadType');
+    const body = req.body as { email: string; password: string };
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
 
-    const sessionId = randomUUID();
-    const session: SessionDraft = {
-      sessionId,
-      userId: body.userId,
+    const rows = await query<UserRow[]>(
+      `SELECT id, email, password_hash, nickname FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
+    const user = rows[0];
+    if (!user || !verifyPassword(password, user.password_hash)) {
+      return res.status(401).send('邮箱或密码错误');
+    }
+
+    const token = createToken({ id: user.id, email: user.email });
+    return res.json({
+      token,
+      user: { id: user.id, email: user.email, nickname: user.nickname },
+    });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const rows = await query<UserRow[]>(
+      `SELECT id, email, password_hash, nickname FROM users WHERE id = ? LIMIT 1`,
+      [userId],
+    );
+
+    if (!rows[0]) return res.status(404).send('User not found');
+    return res.json({
+      user: {
+        id: rows[0].id,
+        email: rows[0].email,
+        nickname: rows[0].nickname,
+      },
+    });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.get('/api/settings/tarot', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const settings = await getTarotSettings(req.user!.id);
+    return res.json(settings);
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.post('/api/settings/tarot', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = req.body as { reverseEnabled: boolean };
+    await query<ResultSetHeader>(
+      `INSERT INTO user_settings(user_id, reverse_enabled) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE reverse_enabled = VALUES(reverse_enabled)`,
+      [req.user!.id, body.reverseEnabled ? 1 : 0],
+    );
+
+    return res.json({ reverseEnabled: Boolean(body.reverseEnabled) });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.get('/api/profile', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const rows = await query<Array<RowDataPacket & { type: 'liuyao' | 'tarot'; count: number }>>(
+      `SELECT type, COUNT(*) as count
+       FROM divination_records
+       WHERE user_id = ?
+       GROUP BY type`,
+      [userId],
+    );
+
+    const liuyaoCount = Number(rows.find((r) => r.type === 'liuyao')?.count || 0);
+    const tarotCount = Number(rows.find((r) => r.type === 'tarot')?.count || 0);
+    return res.json({
+      userId,
+      liuyaoCount,
+      tarotCount,
+      totalCount: liuyaoCount + tarotCount,
+    });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.post('/api/liuyao/sessions/start', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = req.body as { question: string; category?: string };
+    if (!body?.question?.trim()) return res.status(400).send('Missing question');
+    if (body.question.trim().length > 100) return res.status(400).send('Question too long');
+
+    const session = await sessions.create({
+      userId: req.user!.id,
+      type: 'liuyao',
       state: 'STATE_INTENT',
       question: body.question.trim(),
-      spreadType: body.spreadType,
-      deck: [],
-      selected: [],
-      reversals: {},
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    await saveSession(session, 24 * 60 * 60);
-    await redis.zAdd(userDraftsKey(body.userId), [{ score: Date.now(), value: sessionId }]);
-    await enforceDraftLimit(body.userId);
-    return res.json({ sessionId });
-  } catch (e) {
-    return res.status(400).send((e as Error).message);
-  }
-});
-
-app.post('/api/sessions/:sessionId/shuffle', async (req, res) => {
-  try {
-    const userId = String(req.body.userId || '');
-    const sessionId = String(req.params.sessionId || '');
-    if (!userId || !sessionId) return res.status(400).send('Missing userId/sessionId');
-
-    const settings = await getOrCreateSettings(userId);
-    const session = await loadSession(userId, sessionId);
-    const seededRandom = createSeededRandom(Date.now());
-    const deck = fisherYates(TAROT_CARD_IDS, seededRandom);
-    const reversals: Record<string, boolean> = {};
-
-    for (const cardId of deck) {
-      reversals[cardId] = settings.reverseEnabled ? seededRandom() >= 0.5 : false;
-    }
-
-    session.deck = deck;
-    session.reversals = reversals;
-    session.state = 'STATE_SELECT';
-    await saveSession(session, 2 * 60 * 60);
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(400).send((e as Error).message);
-  }
-});
-
-app.post('/api/sessions/:sessionId/select', async (req, res) => {
-  try {
-    const userId = String(req.body.userId || '');
-    const sessionId = String(req.params.sessionId || '');
-    if (!userId || !sessionId) return res.status(400).send('Missing userId/sessionId');
-
-    const session = await loadSession(userId, sessionId);
-    if (session.state !== 'STATE_SELECT') return res.status(400).send('当前状态不可选牌');
-
-    const now = Date.now();
-    if (session.lastSelectionAt && now - session.lastSelectionAt < 300) {
-      return res.status(429).send('操作过快，请稍后再试');
-    }
-    session.lastSelectionAt = now;
-
-    const slots = spreadSlotNames(session.spreadType);
-    if (session.selected.length >= slots.length) return res.status(400).send('当前牌阵已选满');
-
-    const rawDeckIndex = Number(req.body.deckIndex);
-    const requestedDeckIndex = Number.isInteger(rawDeckIndex) ? rawDeckIndex : 0;
-    const deckIndex = Math.max(0, Math.min(requestedDeckIndex, session.deck.length - 1));
-    const [nextCardId] = session.deck.splice(deckIndex, 1);
-    if (!nextCardId) return res.status(500).send('牌堆异常');
-    if (session.selected.some((card) => card.cardId === nextCardId)) {
-      return res.status(500).send('选牌重复，状态异常');
-    }
-
-    const picked = {
-      cardId: nextCardId,
-      position: slots[session.selected.length],
-      isReversed: Boolean(session.reversals[nextCardId]),
-    };
-    session.selected.push(picked);
-    await saveSession(session, 2 * 60 * 60);
-
-    return res.json({
-      ...picked,
-      selectedCount: session.selected.length,
-      totalCount: slots.length,
-      complete: session.selected.length === slots.length,
+      inputParams: { category: body.category || '综合', method: 'manual' },
     });
+
+    return res.json({ sessionId: session.sessionId });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.post('/api/liuyao/sessions/:sessionId/cast', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) return res.status(400).send('Missing sessionId');
+
+    const session = await sessions.get(req.user!.id, sessionId);
+    if (session.type !== 'liuyao') return res.status(400).send('Session type mismatch');
+    if (session.state !== 'STATE_INTENT') return res.status(400).send('Invalid session state');
+
+    const provider = createProvider('liuyao');
+    const lines = Array.isArray((req.body as { lines?: number[] })?.lines)
+      ? ((req.body as { lines?: number[] }).lines as number[])
+      : undefined;
+
+    const castResult = await provider.cast({ lines });
+    const next = await sessions.patch(req.user!.id, sessionId, {
+      castResult,
+      state: 'STATE_INTERACT',
+    });
+
+    return res.json({ castResult: next.castResult });
   } catch (e) {
     return res.status(400).send((e as Error).message);
   }
 });
 
-app.get('/api/sessions/:sessionId/reveal-stream', async (req, res) => {
-  const userId = String(req.query.userId || '');
+app.get('/api/liuyao/sessions/:sessionId/reveal-stream', requireAuth, async (req: AuthRequest, res) => {
   const sessionId = String(req.params.sessionId || '');
-  if (!userId || !sessionId) return res.status(400).send('Missing userId/sessionId');
+  if (!sessionId) return res.status(400).send('Missing sessionId');
 
   try {
-    const session = await loadSession(userId, sessionId);
-    const settings = await getOrCreateSettings(userId);
-    const slots = spreadSlotNames(session.spreadType);
-    if (session.selected.length !== slots.length) {
-      return res.status(400).send('当前牌阵未选满，无法解读');
-    }
-    session.state = 'STATE_REVEAL';
-    await saveSession(session, 2 * 60 * 60);
+    const session = await sessions.get(req.user!.id, sessionId);
+    if (session.type !== 'liuyao') return res.status(400).send('Session type mismatch');
+    if (!session.castResult) return res.status(400).send('No cast result');
+
+    await sessions.patch(req.user!.id, sessionId, { state: 'STATE_REVEAL' });
+
+    const provider = createProvider('liuyao');
+    const prompt = provider.getPrompt({
+      question: session.question,
+      castResult: session.castResult,
+      inputParams: session.inputParams,
+    });
+    const offline = provider.getOfflineInterpretation({
+      question: session.question,
+      castResult: session.castResult,
+      inputParams: session.inputParams,
+    });
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
 
-    const aiCards = session.selected.map((picked) => ({
-      position: picked.position,
-      cardName: TAROT_CARD_MAP.get(picked.cardId)?.name || picked.cardId,
-      isReversed: picked.isReversed,
-    }));
-
     let interpretation = '';
-
     try {
-      const stream = generateInterpretationStream({
-        siliconflowApiKey: env.siliconflowApiKey,
-        siliconflowModel: env.siliconflowModel,
-        fallbackOpenAiApiKey: env.fallbackOpenAiApiKey || undefined,
-        fallbackOpenAiModel: env.fallbackOpenAiModel || undefined,
-        question: session.question,
-        spreadType: session.spreadType,
-        cards: aiCards,
-        style: settings.interpretationStyle,
-      });
-
-      for await (const chunk of stream) {
+      for await (const chunk of aiService.generateStream(prompt)) {
         interpretation += chunk;
-        res.write(`event: chunk\ndata: ${chunk.replace(/\n/g, '\\n')}\n\n`);
+        sendSSEChunk(res, chunk);
       }
     } catch {
-      if (!interpretation.trim()) {
-        interpretation = '星辰暂时被云层遮蔽。请稍后重试，或切换更简短的问题重新占卜。';
-      }
-      res.write(`event: chunk\ndata: ${interpretation.replace(/\n/g, '\\n')}\n\n`);
+      interpretation = offline;
+      sendSSEChunk(res, offline);
     }
 
-    const readingId = randomUUID();
+    if (!interpretation.trim()) {
+      interpretation = offline;
+      sendSSEChunk(res, offline);
+    }
+
+    const recordId = randomUUID();
     await query<ResultSetHeader>(
-      `INSERT INTO tarot_records(id, user_id, question, spread_type, cards_json, interpretation_text)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [readingId, userId, session.question, session.spreadType, JSON.stringify(session.selected), interpretation],
+      `INSERT INTO divination_records(id, user_id, type, question, input_params, raw_data, interpretation)
+       VALUES (?, ?, 'liuyao', ?, ?, ?, ?)`,
+      [recordId, req.user!.id, session.question, JSON.stringify(session.inputParams), JSON.stringify(session.castResult), interpretation],
     );
 
-    // 保留最近 30 条
-    await query<ResultSetHeader>(
-      `DELETE FROM tarot_records
-       WHERE id IN (
-         SELECT id FROM (
-           SELECT id
-           FROM tarot_records
-           WHERE user_id = ?
-           ORDER BY created_at DESC
-           LIMIT 18446744073709551615 OFFSET 30
-         ) AS to_delete
-       )`,
-      [userId],
-    );
+    await sessions.delete(req.user!.id, sessionId);
 
-    await redis.del(sessionKey(userId, sessionId));
-    await redis.zRem(userDraftsKey(userId), sessionId);
-
-    const record = {
-      id: readingId,
-      userId,
+    const donePayload = {
+      id: recordId,
+      userId: req.user!.id,
+      type: 'liuyao',
       question: session.question,
-      spreadType: session.spreadType,
-      cards: session.selected,
-      interpretationText: interpretation,
+      inputParams: session.inputParams,
+      rawData: session.castResult,
+      interpretation,
+      isStarred: false,
       createdAt: new Date().toISOString(),
     };
 
-    res.write(`event: done\ndata: ${JSON.stringify(record)}\n\n`);
+    res.write(`event: done\ndata: ${JSON.stringify(donePayload)}\n\n`);
     res.end();
-    return;
   } catch (e) {
     res.write(`event: error\ndata: ${(e as Error).message}\n\n`);
     res.end();
-    return;
+  }
+});
+
+app.post('/api/tarot/sessions/start', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = req.body as { question: string; spreadType: 'single' | 'trinity' | 'celtic'; reverseEnabled?: boolean };
+    if (!body?.question?.trim()) return res.status(400).send('Missing question');
+    if (!body?.spreadType) return res.status(400).send('Missing spreadType');
+    if (body.question.trim().length > 100) return res.status(400).send('Question too long');
+
+    const settings = await getTarotSettings(req.user!.id);
+    const session = await sessions.create({
+      userId: req.user!.id,
+      type: 'tarot',
+      state: 'STATE_INTENT',
+      question: body.question.trim(),
+      inputParams: {
+        spreadType: body.spreadType,
+        reverseEnabled: typeof body.reverseEnabled === 'boolean' ? body.reverseEnabled : settings.reverseEnabled,
+      },
+    });
+
+    return res.json({ sessionId: session.sessionId });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.post('/api/tarot/sessions/:sessionId/shuffle', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) return res.status(400).send('Missing sessionId');
+
+    const session = await sessions.get(req.user!.id, sessionId);
+    if (session.type !== 'tarot') return res.status(400).send('Session type mismatch');
+
+    const random = createSeededRandom(Date.now());
+    const deck = fisherYates(TAROT_CARD_IDS, random);
+    const reverseEnabled = Boolean(session.inputParams.reverseEnabled);
+    const reversals: Record<string, boolean> = {};
+    for (const cardId of deck) {
+      reversals[cardId] = reverseEnabled ? random() > 0.5 : false;
+    }
+
+    const castResult = {
+      spreadType: session.inputParams.spreadType,
+      deck,
+      reversals,
+      selected: [] as Array<{ cardId: string; position: string; isReversed: boolean }>,
+    };
+
+    await sessions.patch(req.user!.id, sessionId, { state: 'STATE_INTERACT', castResult });
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(400).send((e as Error).message);
+  }
+});
+
+app.post('/api/tarot/sessions/:sessionId/select', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) return res.status(400).send('Missing sessionId');
+
+    const session = await sessions.get(req.user!.id, sessionId);
+    if (session.type !== 'tarot') return res.status(400).send('Session type mismatch');
+
+    const castResult = session.castResult as {
+      spreadType: 'single' | 'trinity' | 'celtic';
+      deck: string[];
+      reversals: Record<string, boolean>;
+      selected: Array<{ cardId: string; position: string; isReversed: boolean }>;
+    };
+    if (!castResult) return res.status(400).send('No shuffled deck');
+
+    const slots = spreadSlotNames(castResult.spreadType);
+    if (castResult.selected.length >= slots.length) return res.status(400).send('Selection complete');
+
+    const rawDeckIndex = Number((req.body as { deckIndex?: number })?.deckIndex);
+    const requestedDeckIndex = Number.isInteger(rawDeckIndex) ? rawDeckIndex : 0;
+    const deckIndex = Math.max(0, Math.min(requestedDeckIndex, castResult.deck.length - 1));
+
+    const [cardId] = castResult.deck.splice(deckIndex, 1);
+    if (!cardId) return res.status(400).send('Deck empty');
+
+    const picked = {
+      cardId,
+      position: slots[castResult.selected.length],
+      isReversed: Boolean(castResult.reversals[cardId]),
+    };
+    castResult.selected.push(picked);
+
+    await sessions.patch(req.user!.id, sessionId, { castResult });
+
+    return res.json({
+      ...picked,
+      selectedCount: castResult.selected.length,
+      totalCount: slots.length,
+      complete: castResult.selected.length === slots.length,
+    });
+  } catch (e) {
+    return res.status(400).send((e as Error).message);
+  }
+});
+
+app.get('/api/tarot/sessions/:sessionId/reveal-stream', requireAuth, async (req: AuthRequest, res) => {
+  const sessionId = String(req.params.sessionId || '');
+  if (!sessionId) return res.status(400).send('Missing sessionId');
+
+  try {
+    const session = await sessions.get(req.user!.id, sessionId);
+    if (session.type !== 'tarot') return res.status(400).send('Session type mismatch');
+
+    const castResult = session.castResult as {
+      spreadType: 'single' | 'trinity' | 'celtic';
+      selected: Array<{ cardId: string; position: string; isReversed: boolean }>;
+    };
+
+    const slots = spreadSlotNames(castResult.spreadType);
+    if (castResult.selected.length !== slots.length) {
+      return res.status(400).send('当前牌阵未选满，无法解读');
+    }
+
+    await sessions.patch(req.user!.id, sessionId, { state: 'STATE_REVEAL' });
+
+    const provider = createProvider('tarot');
+    const prompt = provider.getPrompt({
+      question: session.question,
+      castResult,
+      inputParams: session.inputParams,
+    });
+    const offline = provider.getOfflineInterpretation({
+      question: session.question,
+      castResult,
+      inputParams: session.inputParams,
+    });
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+
+    let interpretation = '';
+    try {
+      for await (const chunk of aiService.generateStream(prompt)) {
+        interpretation += chunk;
+        sendSSEChunk(res, chunk);
+      }
+    } catch {
+      interpretation = offline;
+      sendSSEChunk(res, offline);
+    }
+
+    if (!interpretation.trim()) {
+      interpretation = offline;
+      sendSSEChunk(res, offline);
+    }
+
+    const recordId = randomUUID();
+    await query<ResultSetHeader>(
+      `INSERT INTO divination_records(id, user_id, type, question, input_params, raw_data, interpretation)
+       VALUES (?, ?, 'tarot', ?, ?, ?, ?)`,
+      [recordId, req.user!.id, session.question, JSON.stringify(session.inputParams), JSON.stringify(castResult), interpretation],
+    );
+
+    await sessions.delete(req.user!.id, sessionId);
+
+    const donePayload = {
+      id: recordId,
+      userId: req.user!.id,
+      type: 'tarot',
+      question: session.question,
+      inputParams: session.inputParams,
+      rawData: castResult,
+      interpretation,
+      isStarred: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    res.write(`event: done\ndata: ${JSON.stringify(donePayload)}\n\n`);
+    res.end();
+  } catch (e) {
+    res.write(`event: error\ndata: ${(e as Error).message}\n\n`);
+    res.end();
+  }
+});
+
+app.get('/api/history', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const type = String(req.query.type || 'all');
+    const keyword = String(req.query.q || '').trim();
+
+    const where: string[] = ['user_id = ?'];
+    const params: Array<string> = [req.user!.id];
+
+    if (type === 'liuyao' || type === 'tarot') {
+      where.push('type = ?');
+      params.push(type);
+    }
+
+    if (keyword) {
+      where.push('question LIKE ?');
+      params.push(`%${keyword}%`);
+    }
+
+    const rows = await query<HistoryRow[]>(
+      `SELECT id, user_id, type, question, input_params, raw_data, interpretation, is_starred, created_at
+       FROM divination_records
+       WHERE ${where.join(' AND ')}
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      params,
+    );
+
+    return res.json(
+      rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        type: row.type,
+        question: row.question,
+        inputParams: parseJson(row.input_params, {}),
+        rawData: parseJson(row.raw_data, {}),
+        interpretation: row.interpretation || '',
+        isStarred: typeof row.is_starred === 'boolean' ? row.is_starred : row.is_starred === 1,
+        createdAt: new Date(row.created_at).toISOString(),
+      })),
+    );
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.get('/api/history/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id || '');
+    if (!id) return res.status(400).send('Missing id');
+
+    const rows = await query<HistoryRow[]>(
+      `SELECT id, user_id, type, question, input_params, raw_data, interpretation, is_starred, created_at
+       FROM divination_records
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+      [id, req.user!.id],
+    );
+
+    if (!rows[0]) return res.status(404).send('Not found');
+
+    const row = rows[0];
+    return res.json({
+      id: row.id,
+      userId: row.user_id,
+      type: row.type,
+      question: row.question,
+      inputParams: parseJson(row.input_params, {}),
+      rawData: parseJson(row.raw_data, {}),
+      interpretation: row.interpretation || '',
+      isStarred: typeof row.is_starred === 'boolean' ? row.is_starred : row.is_starred === 1,
+      createdAt: new Date(row.created_at).toISOString(),
+    });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.delete('/api/history/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id || '');
+    if (!id) return res.status(400).send('Missing id');
+
+    await query<ResultSetHeader>(
+      `DELETE FROM divination_records
+       WHERE id = ? AND user_id = ?`,
+      [id, req.user!.id],
+    );
+
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.post('/api/divination/followup', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = req.body as { recordId: string; question: string };
+    if (!body?.recordId || !body.question?.trim()) {
+      return res.status(400).send('Missing recordId/question');
+    }
+
+    const rows = await query<HistoryRow[]>(
+      `SELECT id, user_id, type, question, input_params, raw_data, interpretation, is_starred, created_at
+       FROM divination_records
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+      [body.recordId, req.user!.id],
+    );
+
+    if (!rows[0]) return res.status(404).send('Record not found');
+    const row = rows[0];
+
+    const followupPrompt = [
+      `这是一次${row.type === 'liuyao' ? '六爻' : '塔罗'}历史记录。`,
+      `原始问题：${row.question}`,
+      `原始解读：${row.interpretation || ''}`,
+      `用户追问：${body.question.trim()}`,
+      '请用中文给出简洁且可执行的补充建议，控制在 6 句内。',
+    ].join('\n');
+
+    let text = '';
+    for await (const chunk of aiService.generateStream(followupPrompt)) {
+      text += chunk;
+    }
+    if (!text.trim()) {
+      text = '建议回到原问题主线，优先做一件可执行的小动作，再观察反馈。';
+    }
+
+    return res.json({ text });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
   }
 });
 
@@ -491,7 +704,7 @@ if (existsSync(indexHtmlPath)) {
   });
 } else {
   app.get('/', (_req, res) => {
-    res.status(200).send('Tarot API is running. Frontend bundle not found (dist/index.html).');
+    res.status(200).send('Chunfeng API is running. Frontend bundle not found (dist/index.html).');
   });
 }
 

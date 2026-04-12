@@ -1,4 +1,36 @@
 export type SpreadType = 'single' | 'trinity' | 'celtic';
+export type DivinationType = 'liuyao' | 'tarot';
+
+export interface User {
+  id: string;
+  email: string;
+  nickname: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
+}
+
+export interface TarotSettings {
+  reverseEnabled: boolean;
+}
+
+export interface HexagramData {
+  number: number;
+  name: string;
+  judgment: string;
+  fortune: '大吉' | '小吉' | '平' | '忧' | '大忧';
+  summary: string;
+  lines: number[];
+}
+
+export interface LiuyaoCastResult {
+  lines: number[];
+  movingLines: number[];
+  primary: HexagramData;
+  changed: HexagramData;
+}
 
 export interface TarotCard {
   id: string;
@@ -12,51 +44,27 @@ export interface TarotCard {
   entity?: string;
 }
 
-export interface ReadingCard {
+export interface TarotSelection {
   cardId: string;
   position: string;
   isReversed: boolean;
 }
 
-export interface Reading {
-  id: string;
-  date: string;
-  question: string;
-  spread: SpreadType;
-  cards: {
-    card: TarotCard;
-    isReversed: boolean;
-    position: string;
-  }[];
-  interpretation: string;
-}
-
-export interface ReadingRecord {
+export interface DivinationRecord {
   id: string;
   userId: string;
+  type: DivinationType;
   question: string;
-  spreadType: SpreadType;
-  cards: ReadingCard[];
-  interpretationText: string;
+  inputParams: Record<string, unknown>;
+  rawData: Record<string, unknown>;
+  interpretation: string;
+  isStarred: boolean;
   createdAt: string;
 }
 
-export interface Note {
-  id: string;
+export interface ProfileStats {
   userId: string;
-  title: string;
-  content: string;
-  date: string;
-  readingId?: string;
-  tags: string[];
+  liuyaoCount: number;
+  tarotCount: number;
+  totalCount: number;
 }
-
-export interface UserSettings {
-  userId: string;
-  reverseEnabled: boolean;
-  defaultSpread: SpreadType;
-  interpretationStyle: 'brief' | 'detailed';
-  themeStyle: 'dark' | 'fresh';
-}
-
-export type RitualState = 'STATE_IDLE' | 'STATE_INTENT' | 'STATE_SHUFFLE' | 'STATE_SELECT' | 'STATE_REVEAL';
