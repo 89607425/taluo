@@ -38,9 +38,9 @@ export default function HistoryList() {
   if (!token) {
     return (
       <main className="min-h-screen max-w-md mx-auto px-4 pt-8 pb-28">
-        <Link to="/" className="text-sm text-zinc-400 hover:text-amber-200">← 返回首页</Link>
-        <div className="mt-6 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-4 text-zinc-300">
-          请先前往 <Link to="/profile" className="text-amber-200 underline">个人中心登录</Link> 后查看历史。
+        <Link to="/" className="text-sm text-emerald-600 hover:text-emerald-800">← 返回首页</Link>
+        <div className="mt-6 rounded-2xl spring-panel p-4 text-emerald-800">
+          请先前往 <Link to="/profile" className="text-emerald-700 underline">个人中心登录</Link> 后查看历史。
         </div>
       </main>
     );
@@ -48,15 +48,15 @@ export default function HistoryList() {
 
   return (
     <main className="min-h-screen max-w-md mx-auto px-4 pt-8 pb-28">
-      <Link to="/" className="text-sm text-zinc-400 hover:text-amber-200">← 返回首页</Link>
-      <h1 className="mt-4 text-3xl font-serif text-amber-100">历史记录</h1>
+      <Link to="/" className="text-sm text-emerald-600 hover:text-emerald-800">← 返回首页</Link>
+      <h1 className="mt-4 text-3xl font-serif text-emerald-900">历史记录</h1>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {['all', 'liuyao', 'tarot'].map((item) => (
           <button
             key={item}
             onClick={() => setFilter(item as 'all' | 'liuyao' | 'tarot')}
-            className={`px-3 py-1 rounded-full border text-xs ${filter === item ? 'border-amber-300 text-amber-200' : 'border-zinc-700 text-zinc-300'}`}
+            className={`px-3 py-1 rounded-full border text-xs ${filter === item ? 'border-emerald-400 text-emerald-700 bg-emerald-50' : 'border-emerald-200 text-emerald-600'}`}
           >
             {item === 'all' ? '全部' : item === 'liuyao' ? '六爻' : '塔罗'}
           </button>
@@ -64,29 +64,29 @@ export default function HistoryList() {
       </div>
 
       <div className="mt-3 flex gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索问题关键词" className="flex-1 rounded-xl bg-zinc-900 border border-zinc-700 px-3 py-2" />
-        <button onClick={() => void load()} className="px-3 py-2 rounded-xl bg-zinc-800 border border-zinc-700">搜索</button>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索问题关键词" className="flex-1 rounded-xl bg-white border border-emerald-200 px-3 py-2" />
+        <button onClick={() => void load()} className="px-3 py-2 rounded-xl spring-btn-ghost">搜索</button>
       </div>
 
-      {loading ? <div className="mt-6 text-zinc-400">加载中...</div> : null}
-      {error ? <div className="mt-6 text-red-300">{error}</div> : null}
+      {loading ? <div className="mt-6 text-emerald-600">加载中...</div> : null}
+      {error ? <div className="mt-6 text-red-600">{error}</div> : null}
 
       <div className="mt-5 space-y-3">
         {records.map((record) => (
-          <div key={record.id} className="rounded-2xl border border-zinc-700 bg-zinc-900/70 p-4">
-            <div className="flex items-center justify-between text-xs text-zinc-400">
+          <div key={record.id} className="rounded-2xl spring-panel p-4">
+            <div className="flex items-center justify-between text-xs text-emerald-600">
               <span>{record.type === 'liuyao' ? '六爻' : '塔罗'}</span>
               <span>{new Date(record.createdAt).toLocaleString('zh-CN', { hour12: false })}</span>
             </div>
-            <div className="mt-2 text-zinc-100">{record.question}</div>
-            <div className="mt-2 text-zinc-400 line-clamp-2 text-sm">{record.interpretation}</div>
+            <div className="mt-2 text-emerald-950">{record.question}</div>
+            <div className="mt-2 text-emerald-700 line-clamp-2 text-sm">{record.interpretation}</div>
             <div className="mt-3 flex gap-2">
-              <button onClick={() => navigate(`/history/${record.id}`)} className="px-2.5 py-1.5 rounded-lg bg-amber-600 text-white text-xs">查看详情</button>
-              <button onClick={() => void remove(record.id)} className="px-2.5 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-xs">删除</button>
+              <button onClick={() => navigate(`/history/${record.id}`)} className="px-2.5 py-1.5 rounded-lg spring-btn text-white text-xs">查看详情</button>
+              <button onClick={() => void remove(record.id)} className="px-2.5 py-1.5 rounded-lg spring-btn-ghost text-xs">删除</button>
             </div>
           </div>
         ))}
-        {!records.length && !loading ? <div className="text-zinc-500">暂无记录</div> : null}
+        {!records.length && !loading ? <div className="text-emerald-600/80">暂无记录</div> : null}
       </div>
     </main>
   );

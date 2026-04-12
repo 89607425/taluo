@@ -38,9 +38,9 @@ export default function HistoryDetail() {
   if (!token) {
     return (
       <main className="min-h-screen max-w-md mx-auto px-4 pt-8 pb-28">
-        <Link to="/history" className="text-sm text-zinc-400 hover:text-amber-200">← 返回历史</Link>
-        <div className="mt-6 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-4 text-zinc-300">
-          登录已失效，请先去 <Link to="/profile" className="text-amber-200 underline">个人中心</Link> 重新登录。
+        <Link to="/history" className="text-sm text-emerald-600 hover:text-emerald-800">← 返回历史</Link>
+        <div className="mt-6 rounded-2xl spring-panel p-4 text-emerald-800">
+          登录已失效，请先去 <Link to="/profile" className="text-emerald-700 underline">个人中心</Link> 重新登录。
         </div>
       </main>
     );
@@ -48,23 +48,23 @@ export default function HistoryDetail() {
 
   return (
     <main className="min-h-screen max-w-md mx-auto px-4 pt-8 pb-28">
-      <Link to="/history" className="text-sm text-zinc-400 hover:text-amber-200">← 返回历史</Link>
+      <Link to="/history" className="text-sm text-emerald-600 hover:text-emerald-800">← 返回历史</Link>
 
-      {error ? <div className="mt-6 text-red-300">{error}</div> : null}
-      {!record && !error ? <div className="mt-6 text-zinc-400">加载中...</div> : null}
+      {error ? <div className="mt-6 text-red-600">{error}</div> : null}
+      {!record && !error ? <div className="mt-6 text-emerald-600">加载中...</div> : null}
 
       {record ? (
         <>
-          <h1 className="mt-4 text-2xl font-serif text-amber-100">{record.question}</h1>
-          <div className="text-zinc-400 text-sm mt-1">{new Date(record.createdAt).toLocaleString('zh-CN', { hour12: false })}</div>
+          <h1 className="mt-4 text-2xl font-serif text-emerald-900">{record.question}</h1>
+          <div className="text-emerald-600 text-sm mt-1">{new Date(record.createdAt).toLocaleString('zh-CN', { hour12: false })}</div>
 
           {record.type === 'liuyao' ? (
-            <section className="mt-5 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-4">
+            <section className="mt-5 rounded-2xl spring-panel p-4">
               {(() => {
                 const cast = record.rawData as unknown as LiuyaoCastResult;
                 return (
                   <>
-                    <div className="text-sm text-zinc-300">本卦：{cast.primary?.name} · 变卦：{cast.changed?.name}</div>
+                    <div className="text-sm text-emerald-800">本卦：{cast.primary?.name} · 变卦：{cast.changed?.name}</div>
                     <div className="mt-3 grid grid-cols-2 gap-5">
                       <div className="space-y-2">{[...(cast.lines || [])].reverse().map((line, idx) => renderLine(line, `l-${idx}`))}</div>
                       <div className="space-y-2">{[...(cast.changed?.lines || [])].reverse().map((line, idx) => renderLine(line, `c-${idx}`))}</div>
@@ -74,20 +74,20 @@ export default function HistoryDetail() {
               })()}
             </section>
           ) : (
-            <section className="mt-5 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-4">
+            <section className="mt-5 rounded-2xl spring-panel p-4">
               <div className="flex flex-wrap gap-3">
                 {((record.rawData.selected || []) as Array<{ cardId: string; isReversed: boolean; position: string }>).map((item, idx) => (
                   <div key={`${item.cardId}-${idx}`}>
-                    <div className="text-xs text-zinc-400 mb-1">{item.position}</div>
+                    <div className="text-xs text-emerald-600 mb-1">{item.position}</div>
                     <CardFlip cardId={item.cardId} isReversed={item.isReversed} />
-                    <div className="text-[11px] text-zinc-400 mt-1">{TAROT_CARD_MAP.get(item.cardId)?.name || item.cardId}</div>
+                    <div className="text-[11px] text-emerald-600 mt-1">{TAROT_CARD_MAP.get(item.cardId)?.name || item.cardId}</div>
                   </div>
                 ))}
               </div>
             </section>
           )}
 
-          <section className="mt-5 rounded-2xl border border-amber-300/20 bg-zinc-950/60 p-4 whitespace-pre-wrap text-zinc-100/95 leading-7">
+          <section className="mt-5 rounded-2xl spring-panel p-4 whitespace-pre-wrap text-emerald-900/95 leading-7">
             {record.interpretation}
           </section>
         </>

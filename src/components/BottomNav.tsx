@@ -9,8 +9,8 @@ function Item({ to, children }: { to: string; children: ReactNode }) {
       className={({ isActive }) =>
         `h-11 w-11 rounded-full border flex items-center justify-center transition ${
           isActive
-            ? 'border-amber-300/70 bg-amber-300/10 text-amber-200'
-            : 'border-zinc-700 bg-zinc-900/70 text-zinc-300 hover:text-amber-200 hover:border-amber-300/40'
+            ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+            : 'border-emerald-200 bg-white text-emerald-500 hover:text-emerald-700 hover:border-emerald-300'
         }`
       }
     >
@@ -22,7 +22,7 @@ function Item({ to, children }: { to: string; children: ReactNode }) {
 export default function BottomNav() {
   return (
     <div className="fixed bottom-5 left-0 right-0 z-50 flex justify-center pointer-events-none">
-      <div className="pointer-events-auto flex items-center gap-5 rounded-full border border-zinc-700 bg-zinc-950/80 px-5 py-3 backdrop-blur">
+      <div className="pointer-events-auto flex items-center gap-5 rounded-full spring-panel px-5 py-3">
         <Item to="/history">
           <History size={18} />
         </Item>
