@@ -8,6 +8,7 @@ import AdminPanel from './pages/AdminPanel';
 import Portal from './pages/Portal';
 import Profile from './pages/Profile';
 import TarotFlow from './pages/TarotFlow';
+import XingFlow from './pages/XingFlow';
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="/tarot" element={<SessionGuard><TarotFlow /></SessionGuard>} />
           <Route path="/tarot/spread" element={<SessionGuard><TarotFlow /></SessionGuard>} />
           <Route path="/tarot/reading" element={<SessionGuard><TarotFlow /></SessionGuard>} />
+          <Route path="/xing" element={<SessionGuard><XingFlow /></SessionGuard>} />
           <Route path="/history" element={<SessionGuard><HistoryList /></SessionGuard>} />
           <Route path="/history/:id" element={<SessionGuard><HistoryDetail /></SessionGuard>} />
           <Route path="/profile" element={<SessionGuard><Profile /></SessionGuard>} />

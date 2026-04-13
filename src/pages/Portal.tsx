@@ -17,7 +17,7 @@ export default function Portal() {
       <div className="relative z-10 mx-auto max-w-5xl">
         {showGuide ? (
           <div className="mb-8 rounded-2xl cf-panel-soft p-4 md:p-5">
-            <div className="text-sm text-[#cfe8db]">欢迎来到「春风」：你可以在同一入口完成六爻与塔罗的完整解读流程。</div>
+            <div className="text-sm text-[#cfe8db]">欢迎来到「春风」：你可以在同一入口完成六爻、塔罗与星盘的完整解读流程。</div>
             <button
               className="mt-3 rounded-full px-4 py-1.5 text-xs cf-btn-ghost"
               onClick={() => {
@@ -36,7 +36,7 @@ export default function Portal() {
           <p className="mt-4 text-sm md:text-base tracking-[0.25em] text-[#c5d7cd]">遇事不决可问春风</p>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
           <Link
             to="/liuyao"
             className="group rounded-3xl cf-panel p-6 md:p-8 min-h-[300px] flex flex-col justify-between"
@@ -59,6 +59,20 @@ export default function Portal() {
               <div className="mt-2 text-sm text-[#cfd8d2]">单牌 / 三牌 / 凯尔特十字，支持完整牌阵追问。</div>
             </div>
             <div className="text-sm text-[#9fd3b7] group-hover:text-[#d1e8dc]">进入塔罗流程 →</div>
+          </Link>
+
+          <Link
+            to="/xing"
+            className="group rounded-3xl cf-panel p-6 md:p-8 min-h-[300px] flex flex-col justify-between"
+          >
+            <div>
+              <div className="text-xs uppercase tracking-[0.34em] text-[#b9c2ff]">XingPan · Natal</div>
+              <div className="mt-3 cf-kaiti text-5xl text-[#d9e1ff]">星列</div>
+              <div className="mt-2 text-sm text-[#d6dcff]">
+                本命盘 + 行星落位 + 相位结构，快速生成个人星盘解读。
+              </div>
+            </div>
+            <div className="text-sm text-[#aebcff] group-hover:text-[#d9e1ff]">进入星盘流程 →</div>
           </Link>
         </div>
 
