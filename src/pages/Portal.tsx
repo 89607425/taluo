@@ -17,7 +17,7 @@ export default function Portal() {
       <div className="relative z-10 mx-auto max-w-5xl">
         {showGuide ? (
           <div className="mb-8 rounded-2xl cf-panel-soft p-4 md:p-5">
-            <div className="text-sm text-[#cfe8db]">欢迎来到「玄机」：你可以在同一入口完成六爻与塔罗的完整解读流程。</div>
+            <div className="text-sm text-[#cfe8db]">欢迎来到「春风」：你可以在同一入口完成六爻与塔罗的完整解读流程。</div>
             <button
               className="mt-3 rounded-full px-4 py-1.5 text-xs cf-btn-ghost"
               onClick={() => {
@@ -32,11 +32,8 @@ export default function Portal() {
 
         <div className="rounded-3xl cf-panel p-8 md:p-10 text-center">
           <img src="/mountain-ink.svg" alt="ink mountain" className="mx-auto mb-4 w-28 opacity-70" />
-          <h1 className="cf-kaiti text-5xl md:text-7xl tracking-[0.3em] text-[#f2e8cf]">玄机</h1>
+          <h1 className="cf-kaiti text-5xl md:text-7xl tracking-[0.3em] text-[#f2e8cf]">春风</h1>
           <p className="mt-4 text-sm md:text-base tracking-[0.25em] text-[#c5d7cd]">遇事不决可问春风</p>
-          <p className="mx-auto mt-3 max-w-2xl text-sm text-[#c8c3b9]/85">
-            以六爻观结构，以塔罗看情境。一个入口，双路径，同一套历史与追问能力。
-          </p>
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">

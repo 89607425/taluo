@@ -18,4 +18,6 @@ export const env = {
   openaiApiKey: optional('OPENAI_API_KEY') || optional('FALLBACK_OPENAI_API_KEY'),
   openaiModel: optional('OPENAI_MODEL') || optional('FALLBACK_OPENAI_MODEL') || 'gpt-4o-mini',
   jwtSecret: optional('JWT_SECRET') || 'dev-jwt-secret-change-me',
+  adminUsername: optional('ADMIN_USERNAME') || 'admin',
+  adminPassword: optional('ADMIN_PASSWORD') || 'chunfeng_admin_2026',
 };

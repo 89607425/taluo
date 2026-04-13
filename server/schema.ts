@@ -1,4 +1,18 @@
 import { query } from './db';
+import { RowDataPacket } from 'mysql2/promise';
+
+async function columnExists(table: string, column: string): Promise<boolean> {
+  const rows = await query<Array<RowDataPacket & { column_name: string }>>(
+    `SELECT COLUMN_NAME AS column_name
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND COLUMN_NAME = ?
+     LIMIT 1`,
+    [table, column],
+  );
+  return rows.length > 0;
+}
 
 export async function ensureSchema(): Promise<void> {
   await query(`
@@ -37,4 +51,11 @@ export async function ensureSchema(): Promise<void> {
       CONSTRAINT fk_user_settings_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
+
+  if (!(await columnExists('users', 'is_banned'))) {
+    await query(`
+      ALTER TABLE users
+      ADD COLUMN is_banned TINYINT(1) NOT NULL DEFAULT 0
+    `);
+  }
 }

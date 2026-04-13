@@ -1,4 +1,7 @@
 import {
+  AdminAuthResponse,
+  AdminRecordSummary,
+  AdminUserSummary,
   AuthResponse,
   DivinationRecord,
   LiuyaoCastResult,
@@ -10,6 +13,7 @@ import {
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_PROXY_TARGET = (import.meta.env.VITE_API_PROXY_TARGET || 'http://localhost:8787').replace(/\/$/, '');
 const TOKEN_KEY = 'chunfeng:token';
 
 export function getToken(): string | null {
@@ -206,4 +210,53 @@ export async function streamReveal(params: {
       if (eventType === 'error') throw new Error(data || '流式解读失败');
     }
   }
+}
+
+function adminHeaders(token: string, extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    ...extra,
+  };
+}
+
+async function adminFetch(path: string, init?: RequestInit): Promise<Response> {
+  const primary = await fetch(`${API_BASE}${path}`, init);
+  if (primary.status !== 404) return primary;
+  if (!API_BASE.startsWith('/')) return primary;
+  return fetch(`${API_PROXY_TARGET}/api${path}`, init);
+}
+
+export async function adminLogin(payload: { username: string; password: string }) {
+  const res = await adminFetch('/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<AdminAuthResponse>(res);
+}
+
+export async function adminGetUsers(token: string) {
+  const res = await adminFetch('/admin/users', {
+    headers: adminHeaders(token),
+  });
+  return parseJson<AdminUserSummary[]>(res);
+}
+
+export async function adminGetRecords(token: string, params?: { userId?: string }) {
+  const qs = new URLSearchParams();
+  if (params?.userId) qs.set('userId', params.userId);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await adminFetch(`/admin/records${suffix}`, {
+    headers: adminHeaders(token),
+  });
+  return parseJson<AdminRecordSummary[]>(res);
+}
+
+export async function adminSetUserBan(token: string, payload: { userId: string; banned: boolean }) {
+  const res = await adminFetch('/admin/users/ban', {
+    method: 'POST',
+    headers: adminHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  return parseJson<{ ok: true }>(res);
 }

@@ -4,6 +4,7 @@ import SessionGuard from './components/common/SessionGuard';
 import HistoryDetail from './pages/HistoryDetail';
 import HistoryList from './pages/HistoryList';
 import LiuyaoFlow from './pages/LiuyaoFlow';
+import AdminPanel from './pages/AdminPanel';
 import Portal from './pages/Portal';
 import Profile from './pages/Profile';
 import TarotFlow from './pages/TarotFlow';
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/history" element={<SessionGuard><HistoryList /></SessionGuard>} />
           <Route path="/history/:id" element={<SessionGuard><HistoryDetail /></SessionGuard>} />
           <Route path="/profile" element={<SessionGuard><Profile /></SessionGuard>} />
+          <Route path="/admin" element={<AdminPanel />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <BottomNav />

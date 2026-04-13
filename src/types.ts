@@ -68,3 +68,29 @@ export interface ProfileStats {
   tarotCount: number;
   totalCount: number;
 }
+
+export interface AdminAuthResponse {
+  token: string;
+}
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  nickname: string;
+  isBanned: boolean;
+  createdAt: string;
+  liuyaoCount: number;
+  tarotCount: number;
+  totalCount: number;
+}
+
+export interface AdminRecordSummary {
+  id: string;
+  userId: string;
+  email: string;
+  nickname: string;
+  type: 'liuyao' | 'tarot';
+  question: string;
+  interpretation: string;
+  createdAt: string;
+}

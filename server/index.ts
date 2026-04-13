@@ -34,6 +34,7 @@ type UserRow = RowDataPacket & {
   email: string;
   password_hash: string;
   nickname: string;
+  is_banned: number | boolean;
 };
 
 type TarotSettingsRow = RowDataPacket & {
@@ -44,6 +45,8 @@ type TarotSettingsRow = RowDataPacket & {
 const app = express();
 const sessions = new SessionManager(24 * 60 * 60);
 const aiService = new AIService();
+const adminSessions = new Map<string, number>();
+const ADMIN_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
@@ -96,14 +99,46 @@ function createToken(payload: { id: string; email: string }): string {
   return jwt.sign({ sub: payload.id, email: payload.email }, env.jwtSecret, { expiresIn: '7d' });
 }
 
-function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+function adminToken(): string {
+  return `adm_${randomUUID().replace(/-/g, '')}`;
+}
+
+function pruneAdminSessions() {
+  const now = Date.now();
+  for (const [token, expiresAt] of adminSessions.entries()) {
+    if (expiresAt <= now) adminSessions.delete(token);
+  }
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const auth = String(req.headers.authorization || '');
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token) return res.status(401).send('Unauthorized');
+  pruneAdminSessions();
+  const expiresAt = adminSessions.get(token);
+  if (!expiresAt || expiresAt <= Date.now()) {
+    adminSessions.delete(token);
+    return res.status(401).send('Unauthorized');
+  }
+  return next();
+}
+
+async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const auth = String(req.headers.authorization || '');
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   if (!token) return res.status(401).send('Unauthorized');
 
   try {
     const decoded = jwt.verify(token, env.jwtSecret) as { sub: string; email: string };
-    req.user = { id: decoded.sub, email: decoded.email };
+    const rows = await query<UserRow[]>(
+      `SELECT id, email, password_hash, nickname, is_banned FROM users WHERE id = ? LIMIT 1`,
+      [decoded.sub],
+    );
+    const user = rows[0];
+    if (!user) return res.status(401).send('Unauthorized');
+    const isBanned = typeof user.is_banned === 'boolean' ? user.is_banned : user.is_banned === 1;
+    if (isBanned) return res.status(403).send('账号已被封禁');
+    req.user = { id: user.id, email: user.email };
     return next();
   } catch {
     return res.status(401).send('Unauthorized');
@@ -144,7 +179,10 @@ app.post('/api/auth/register', async (req, res) => {
     if (!email || !email.includes('@')) return res.status(400).send('邮箱格式不正确');
     if (password.length < 6) return res.status(400).send('密码至少 6 位');
 
-    const existed = await query<UserRow[]>(`SELECT id, email, password_hash, nickname FROM users WHERE email = ? LIMIT 1`, [email]);
+    const existed = await query<UserRow[]>(
+      `SELECT id, email, password_hash, nickname, is_banned FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
     if (existed[0]) return res.status(409).send('邮箱已注册');
 
     const userId = randomUUID();
@@ -176,13 +214,15 @@ app.post('/api/auth/login', async (req, res) => {
     const password = String(body.password || '');
 
     const rows = await query<UserRow[]>(
-      `SELECT id, email, password_hash, nickname FROM users WHERE email = ? LIMIT 1`,
+      `SELECT id, email, password_hash, nickname, is_banned FROM users WHERE email = ? LIMIT 1`,
       [email],
     );
     const user = rows[0];
     if (!user || !verifyPassword(password, user.password_hash)) {
       return res.status(401).send('邮箱或密码错误');
     }
+    const isBanned = typeof user.is_banned === 'boolean' ? user.is_banned : user.is_banned === 1;
+    if (isBanned) return res.status(403).send('账号已被封禁');
 
     const token = createToken({ id: user.id, email: user.email });
     return res.json({
@@ -194,11 +234,135 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.post('/api/admin/login', async (req, res) => {
+  const body = req.body as { username?: string; password?: string };
+  const username = String(body.username || '').trim();
+  const password = String(body.password || '');
+  if (username !== env.adminUsername || password !== env.adminPassword) {
+    return res.status(401).send('管理员账号或密码错误');
+  }
+  pruneAdminSessions();
+  const token = adminToken();
+  adminSessions.set(token, Date.now() + ADMIN_SESSION_TTL_MS);
+  return res.json({ token });
+});
+
+app.get('/api/admin/users', requireAdmin, async (_req, res) => {
+  try {
+    const rows = await query<
+      Array<
+        RowDataPacket & {
+          id: string;
+          email: string;
+          nickname: string;
+          created_at: string | Date;
+          is_banned: number | boolean;
+          liuyao_count: number;
+          tarot_count: number;
+          total_count: number;
+        }
+      >
+    >(
+      `SELECT
+        u.id,
+        u.email,
+        u.nickname,
+        u.created_at,
+        u.is_banned,
+        SUM(CASE WHEN d.type = 'liuyao' THEN 1 ELSE 0 END) AS liuyao_count,
+        SUM(CASE WHEN d.type = 'tarot' THEN 1 ELSE 0 END) AS tarot_count,
+        COUNT(d.id) AS total_count
+      FROM users u
+      LEFT JOIN divination_records d ON d.user_id = u.id
+      GROUP BY u.id
+      ORDER BY u.created_at DESC`,
+    );
+
+    return res.json(
+      rows.map((row) => ({
+        id: row.id,
+        email: row.email,
+        nickname: row.nickname,
+        isBanned: typeof row.is_banned === 'boolean' ? row.is_banned : row.is_banned === 1,
+        createdAt: new Date(row.created_at).toISOString(),
+        liuyaoCount: Number(row.liuyao_count || 0),
+        tarotCount: Number(row.tarot_count || 0),
+        totalCount: Number(row.total_count || 0),
+      })),
+    );
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.get('/api/admin/records', requireAdmin, async (req, res) => {
+  try {
+    const userId = String(req.query.userId || '').trim();
+    const params: string[] = [];
+    const where: string[] = [];
+    if (userId) {
+      where.push('d.user_id = ?');
+      params.push(userId);
+    }
+
+    const rows = await query<
+      Array<
+        RowDataPacket & {
+          id: string;
+          user_id: string;
+          email: string;
+          nickname: string;
+          type: 'liuyao' | 'tarot';
+          question: string;
+          interpretation: string | null;
+          created_at: string | Date;
+        }
+      >
+    >(
+      `SELECT
+        d.id, d.user_id, u.email, u.nickname, d.type, d.question, d.interpretation, d.created_at
+      FROM divination_records d
+      JOIN users u ON u.id = d.user_id
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY d.created_at DESC
+      LIMIT 500`,
+      params,
+    );
+
+    return res.json(
+      rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        email: row.email,
+        nickname: row.nickname,
+        type: row.type,
+        question: row.question,
+        interpretation: row.interpretation || '',
+        createdAt: new Date(row.created_at).toISOString(),
+      })),
+    );
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
+app.post('/api/admin/users/ban', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body as { userId?: string; banned?: boolean };
+    const userId = String(body.userId || '').trim();
+    if (!userId) return res.status(400).send('userId 必填');
+    await query<ResultSetHeader>(`UPDATE users SET is_banned = ? WHERE id = ?`, [body.banned ? 1 : 0, userId]);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).send((e as Error).message);
+  }
+});
+
 app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
     const rows = await query<UserRow[]>(
-      `SELECT id, email, password_hash, nickname FROM users WHERE id = ? LIMIT 1`,
+      `SELECT id, email, password_hash, nickname, is_banned FROM users WHERE id = ? LIMIT 1`,
       [userId],
     );
 

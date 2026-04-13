@@ -99,15 +99,20 @@ export default function Profile() {
       <section className="mt-6 rounded-2xl cf-panel p-4">
         <div className="text-sm text-[#efe7d6]">{user.nickname}</div>
         <div className="text-xs text-[#acc9ba] mt-1">{user.email}</div>
-        <button
-          className="mt-3 px-3 py-1.5 text-xs rounded-lg cf-btn-ghost"
-          onClick={() => {
-            clearToken();
-            window.location.reload();
-          }}
-        >
-          退出登录
-        </button>
+        <div className="mt-3 flex gap-2">
+          <Link to="/admin" className="px-3 py-1.5 text-xs rounded-lg cf-btn-ghost">
+            管理员入口
+          </Link>
+          <button
+            className="px-3 py-1.5 text-xs rounded-lg cf-btn-ghost"
+            onClick={() => {
+              clearToken();
+              window.location.reload();
+            }}
+          >
+            退出登录
+          </button>
+        </div>
       </section>
 
       <section className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
