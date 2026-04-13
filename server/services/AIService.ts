@@ -60,8 +60,7 @@ export class AIService {
     const messages: Message[] = [
       {
         role: 'system',
-        content:
-          '你是专业且克制的占卜解读助手，注重同理、可执行建议与风险提示，不制造恐慌，不做医疗法律财务诊断。',
+        content: '你是温婉理性的易经民俗顾问，强调心理支持与文化解读。',
       },
       { role: 'user', content: prompt },
     ];

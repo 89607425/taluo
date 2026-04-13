@@ -47,28 +47,36 @@ export class LiuyaoProvider implements DivinationProvider {
   getPrompt(params: { question: string; castResult: Record<string, unknown>; inputParams: Record<string, unknown> }): string {
     const cast = params.castResult as {
       movingLines: number[];
-      primary: { name: string; judgment: string; summary: string };
-      changed: { name: string; judgment: string; summary: string };
+      primary: { name: string; judgment: string; summary: string; fortune: string };
+      changed: { name: string; judgment: string; summary: string; fortune: string };
     };
     const category = String(params.inputParams.category || '综合');
 
-    return [
-      `用户问题：${params.question}`,
-      `问题分类：${category}`,
-      `本卦：${cast.primary.name}`,
-      `本卦卦辞：${cast.primary.judgment}`,
-      `本卦摘要：${cast.primary.summary}`,
-      `变卦：${cast.changed.name}`,
-      `变卦卦辞：${cast.changed.judgment}`,
-      `变卦摘要：${cast.changed.summary}`,
-      `动爻：${cast.movingLines.length ? cast.movingLines.join('、') : '无'}`,
-      '',
-      '请输出中文，分三段：',
-      '1) 建议',
-      '2) 避坑',
-      '3) 时机',
-      '每段 2-3 句，不要恐吓，不要绝对化判断。',
-    ].join('\n');
+    return `你是一位博学温婉的易经民俗顾问。
+用户信息如下：
+- 所求事项：${category || '未填写'}
+- 具体问题：${params.question || '未填写'}
+- 本卦：${cast.primary.name || '未知'}
+- 变卦：${cast.changed.name || '未知'}
+- 动爻：${cast.movingLines.length ? cast.movingLines.join('、') : '无'}
+- 离线卦辞：${cast.primary.judgment || '无'}
+- 离线一句话大意：${cast.primary.summary || '无'}
+- 离线吉凶等级：${cast.primary.fortune || '无'}
+- 变卦卦辞：${cast.changed.judgment || '无'}
+- 变卦一句话大意：${cast.changed.summary || '无'}
+- 变卦吉凶等级：${cast.changed.fortune || '无'}
+
+请你必须结合“用户具体问题 + 本卦/变卦/动爻”做针对性解读，避免空泛套话。
+如果有动爻，请把“本卦”视为现状，把“变卦”视为发展后的主趋势。
+请严格按照以下三段输出：
+【当下现状】
+【姐姐建议】
+【避坑指南】
+
+要求：
+1. 语气柔和、理性，侧重心理疏导与国学智慧。
+2. 严禁恐吓、迷信绝对化预言、确定性吉凶断语。
+3. 总字数 250-400 字。`;
   }
 
   getOfflineInterpretation(params: {
@@ -81,18 +89,18 @@ export class LiuyaoProvider implements DivinationProvider {
       primary: { name: string; summary: string };
       changed: { name: string; summary: string };
     };
+    const category = String(params.inputParams.category || '当前事项');
+    const movingText = cast.movingLines.length ? `动爻在第 ${cast.movingLines.join('、')} 爻。` : '当前无动爻。';
 
     return [
-      '## 建议',
-      `你问的是「${params.question}」，当前主线可先按「${cast.primary.name}」的结构推进。${cast.primary.summary}`,
+      '【当下现状】',
+      `你当前更需要的不是“立刻得到标准答案”，而是先把问题拆成可执行的小步骤。${movingText}此卦显示你已具备推进条件，但节奏上仍需稳住，不宜被外界噪音牵引。`,
       '',
-      '## 避坑',
-      cast.movingLines.length
-        ? `动爻在第 ${cast.movingLines.join('、')} 爻，说明变量仍在变化，避免情绪化加码与频繁换轨。`
-        : '当前无动爻，局势相对稳定，重点是持续执行，不要因为短期波动而偏航。',
+      '【姐姐建议】',
+      `围绕“${category}”先做一件最小可验证动作，并在 3-7 天内复盘结果。若“${params.question || '当前问题'}”涉及多人协作，先统一预期再行动，能显著降低内耗。`,
       '',
-      '## 时机',
-      `后续趋势可参考「${cast.changed.name}」：${cast.changed.summary}`,
+      '【避坑指南】',
+      `避免情绪化加码、避免一次性押注、避免把短期波动当成长期结论。可先以「${cast.primary.name}」为现状参考，再观察是否向「${cast.changed.name}」所示趋势推进。`,
     ].join('\n');
   }
 }

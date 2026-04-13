@@ -684,8 +684,12 @@ app.post('/api/divination/followup', requireAuth, async (req: AuthRequest, res) 
     ].join('\n');
 
     let text = '';
-    for await (const chunk of aiService.generateStream(followupPrompt)) {
-      text += chunk;
+    try {
+      for await (const chunk of aiService.generateStream(followupPrompt)) {
+        text += chunk;
+      }
+    } catch {
+      text = '';
     }
     if (!text.trim()) {
       text = '建议回到原问题主线，优先做一件可执行的小动作，再观察反馈。';

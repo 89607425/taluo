@@ -11,7 +11,7 @@ import TarotFlow from './pages/TarotFlow';
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-[#f7fcf8] text-emerald-950">
+      <div className="cf-page text-[#e9e4db]">
         <Routes>
           <Route path="/" element={<Portal />} />
           <Route path="/liuyao" element={<SessionGuard><LiuyaoFlow /></SessionGuard>} />

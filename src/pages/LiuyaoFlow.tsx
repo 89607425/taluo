@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import InterpretationView from '../components/common/InterpretationView';
+import LiuyaoHomeStep from '../components/liuyao/LiuyaoHomeStep';
+import LiuyaoIntentStep from '../components/liuyao/LiuyaoIntentStep';
+import LiuyaoResultStep from '../components/liuyao/LiuyaoResultStep';
+import LiuyaoShakeStep from '../components/liuyao/LiuyaoShakeStep';
 import { castLiuyao, followupQuestion, getToken, startLiuyaoSession, streamReveal } from '../services/api';
 import { LiuyaoCastResult } from '../types';
 
@@ -15,22 +18,6 @@ function castLineByThreeCoins() {
   return { coins, sum, line };
 }
 
-function renderLine(line: number, moving: boolean, index: number) {
-  const isYang = line === 1 || line === 3;
-  return (
-    <div key={index} className="relative mb-2">
-      {isYang ? (
-        <div className={`h-2.5 rounded bg-zinc-100 ${moving ? 'ring-2 ring-amber-300/60' : ''}`} />
-      ) : (
-        <div className="flex gap-3">
-          <div className={`h-2.5 flex-1 rounded bg-zinc-100 ${moving ? 'ring-2 ring-amber-300/60' : ''}`} />
-          <div className={`h-2.5 flex-1 rounded bg-zinc-100 ${moving ? 'ring-2 ring-amber-300/60' : ''}`} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function LiuyaoFlow() {
   const [step, setStep] = useState<Step>('home');
   const [question, setQuestion] = useState('');
@@ -43,6 +30,7 @@ export default function LiuyaoFlow() {
   const [followup, setFollowup] = useState('');
   const [followupAnswer, setFollowupAnswer] = useState('');
   const [lastCoins, setLastCoins] = useState<number[]>([]);
+  const [casting, setCasting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -69,6 +57,7 @@ export default function LiuyaoFlow() {
       setInterpretation('');
       setRecordId('');
       setFollowupAnswer('');
+      setCasting(false);
       setStep('shake');
     } catch (e) {
       setError((e as Error).message);
@@ -78,10 +67,14 @@ export default function LiuyaoFlow() {
   }
 
   function shakeOnce() {
-    if (manualLines.length >= 6) return;
+    if (manualLines.length >= 6 || casting || loading) return;
+    setCasting(true);
     const result = castLineByThreeCoins();
     setLastCoins(result.coins);
-    setManualLines((prev) => [...prev, result.line]);
+    window.setTimeout(() => {
+      setManualLines((prev) => [...prev, result.line]);
+      setCasting(false);
+    }, 260);
   }
 
   async function generateHexagram() {
@@ -135,131 +128,53 @@ export default function LiuyaoFlow() {
   }
 
   return (
-    <main className="min-h-screen max-w-md mx-auto px-4 pt-6 pb-28">
-      <Link to="/" className="text-sm text-emerald-600 hover:text-emerald-800">← 返回首页</Link>
+    <main className="relative min-h-screen max-w-3xl mx-auto px-4 pt-6 pb-28 text-[#171817]">
+      <div className="fixed inset-0 -z-10 bg-[#fcf9f2]" />
+      <Link to="/" className="text-sm text-[#52B788] hover:text-[#40916C]">← 返回首页</Link>
 
       {step === 'home' ? (
-        <section className="mt-6 rounded-3xl spring-panel p-6 text-center">
-          <h1 className="text-3xl font-serif text-emerald-900">六爻起卦</h1>
-          <p className="mt-3 text-sm text-emerald-700/80">静心凝神，先起卦，再问事。</p>
-          <button
-            className="mt-8 w-full py-4 rounded-2xl spring-btn text-lg font-semibold"
-            onClick={() => setStep('intent')}
-          >
-            开始起卦
-          </button>
-        </section>
+        <LiuyaoHomeStep onStart={() => setStep('intent')} />
       ) : null}
 
       {step === 'intent' ? (
-        <section className="mt-6 rounded-2xl spring-panel p-4 space-y-3">
-          <h2 className="text-xl font-serif text-emerald-900">占卜事项</h2>
-          <textarea
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="输入你的问题（1-100字）"
-            className="w-full h-24 rounded-xl bg-white border border-emerald-200 p-3"
-          />
-          <div className="flex flex-wrap gap-2">
-            {categories.map((item) => (
-              <button
-                key={item}
-                className={`px-3 py-1 rounded-full text-xs border ${item === category ? 'border-emerald-400 text-emerald-700 bg-emerald-50' : 'border-emerald-200 text-emerald-600'}`}
-                onClick={() => setCategory(item)}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-          <button disabled={loading} onClick={() => void begin()} className="w-full py-3 rounded-xl spring-btn text-white">
-            {loading ? '准备中...' : '进入摇卦'}
-          </button>
-        </section>
+        <LiuyaoIntentStep
+          question={question}
+          onQuestionChange={setQuestion}
+          category={category}
+          categories={categories}
+          onCategoryChange={setCategory}
+          onBegin={() => void begin()}
+          loading={loading}
+        />
       ) : null}
 
       {step === 'shake' ? (
-        <section className="mt-6 rounded-2xl spring-panel p-4 text-center">
-          <h2 className="text-xl font-serif text-emerald-900">摇卦（六次）</h2>
-          <div className="mt-3 text-sm text-emerald-700/80">已摇 {manualLines.length} / 6</div>
-
-          <div className="mt-4 rounded-xl bg-white border border-emerald-200 p-4">
-            <div className="text-xs text-emerald-600">最近一次铜钱</div>
-            <div className="mt-2 flex justify-center gap-2">
-              {(lastCoins.length ? lastCoins : [2, 3, 2]).map((coin, idx) => (
-                <div key={idx} className="h-10 w-10 rounded-full border border-emerald-300/70 flex items-center justify-center text-emerald-700 bg-emerald-50">
-                  {coin}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <button
-            disabled={manualLines.length >= 6}
-            className="mt-4 w-full py-4 rounded-2xl spring-btn text-white text-lg font-semibold"
-            onClick={shakeOnce}
-          >
-            {manualLines.length >= 6 ? '已完成六次摇卦' : '摇一爻'}
-          </button>
-
-          <button
-            disabled={manualLines.length !== 6 || loading}
-            className="mt-3 w-full py-3 rounded-xl spring-btn text-white disabled:opacity-40"
-            onClick={() => void generateHexagram()}
-          >
-            生成卦象
-          </button>
-        </section>
+        <LiuyaoShakeStep
+          manualLines={manualLines}
+          lastCoins={lastCoins}
+          casting={casting}
+          loading={loading}
+          onShake={shakeOnce}
+          onGenerate={() => void generateHexagram()}
+        />
       ) : null}
 
-      {step === 'offline' && cast ? (
-        <section className="mt-6 rounded-2xl spring-panel p-4">
-          <div className="text-sm text-emerald-700 mb-2">
-            本卦 {cast.primary.name}（{cast.primary.fortune}） → 变卦 {cast.changed.name}（{cast.changed.fortune}）
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-xs text-emerald-600 mb-2">本卦</div>
-              {[...cast.lines].reverse().map((line, idx) => renderLine(line, cast.movingLines.includes(6 - idx), idx))}
-            </div>
-            <div>
-              <div className="text-xs text-emerald-600 mb-2">变卦</div>
-              {[...cast.changed.lines].reverse().map((line, idx) => renderLine(line, false, idx))}
-            </div>
-          </div>
-          <div className="mt-4 rounded-xl border border-emerald-200 bg-white p-3 text-sm text-emerald-900">
-            <div className="text-emerald-600 text-xs mb-1">基础离线卦象</div>
-            <div>本卦卦辞：{cast.primary.judgment}</div>
-            <div className="mt-1 text-emerald-800/90">{cast.primary.summary}</div>
-          </div>
-          <button disabled={loading} className="mt-4 w-full py-3 rounded-xl spring-btn text-white" onClick={() => void deepAnalyze()}>
-            深度分析（调用 AI）
-          </button>
-        </section>
-      ) : null}
-
-      {step === 'deep' ? (
-        <section className="mt-6 space-y-4">
-          <InterpretationView mode="liuyao" text={interpretation || (loading ? 'AI 正在分析...' : '')} />
-          {recordId ? (
-            <div className="rounded-2xl spring-panel p-4">
-              <div className="text-sm text-emerald-800 mb-2">多轮追问</div>
-              <div className="flex gap-2">
-                <input
-                  value={followup}
-                  onChange={(e) => setFollowup(e.target.value)}
-                  placeholder="继续追问"
-                  className="flex-1 rounded-lg bg-white border border-emerald-200 px-3 py-2"
-                />
-                <button onClick={() => void askFollowup()} className="px-3 py-2 rounded-lg spring-btn">发送</button>
-              </div>
-              {followupAnswer ? <div className="mt-3 text-emerald-900 whitespace-pre-wrap">{followupAnswer}</div> : null}
-            </div>
-          ) : null}
-        </section>
+      {cast && (step === 'offline' || step === 'deep') ? (
+        <LiuyaoResultStep
+          cast={cast}
+          loading={loading}
+          interpretation={interpretation}
+          recordId={recordId}
+          followup={followup}
+          followupAnswer={followupAnswer}
+          onDeepAnalyze={() => void deepAnalyze()}
+          onFollowupChange={setFollowup}
+          onAskFollowup={() => void askFollowup()}
+        />
       ) : null}
 
       {error ? (
-        <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        <div className="mt-4 rounded-xl border border-[#b52619]/30 bg-[#fff4f2] p-3 text-sm text-[#b52619]">{error}</div>
       ) : null}
     </main>
   );
